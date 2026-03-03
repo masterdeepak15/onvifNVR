@@ -1,0 +1,87 @@
+version: '3.9'
+
+services:
+  # ============================================================
+  # NVR API Backend
+  # ============================================================
+  nvr-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nvr-api
+    ports:
+      - "5000:8080"
+      - "5001:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - Database__Provider=SqlServer
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=NvrDb;User Id=sa;Password=NvrP@ss2024!;TrustServerCertificate=True;
+      - Jwt__Secret=NVR-SuperSecretKey-ChangeInProduction-AtLeast32Characters!
+      - Jwt__Issuer=NVR.API
+      - Jwt__Audience=NVR.Client
+      - Cors__AllowedOrigins__0=http://localhost:3000
+      - Recording__TempDirectory=/tmp/nvr_chunks
+    volumes:
+      - nvr-recordings:/var/nvr/recordings
+      - nvr-temp:/tmp/nvr_chunks
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - nvr-network
+    restart: unless-stopped
+    # Required for ONVIF multicast discovery (host networking)
+    # network_mode: host
+
+  # ============================================================
+  # SQL Server (for production)
+  # ============================================================
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: nvr-sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=NvrP@ss2024!
+      - MSSQL_PID=Express
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    networks:
+      - nvr-network
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "NvrP@ss2024!" -Q "SELECT 1" -b
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ============================================================
+  # React Frontend (when built)
+  # ============================================================
+  nvr-ui:
+    image: nginx:alpine
+    container_name: nvr-ui
+    ports:
+      - "3000:80"
+    volumes:
+      - ./cctv-ui/dist:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - nvr-api
+    networks:
+      - nvr-network
+    restart: unless-stopped
+
+volumes:
+  nvr-recordings:
+    driver: local
+  nvr-temp:
+    driver: local
+  sqlserver-data:
+    driver: local
+
+networks:
+  nvr-network:
+    driver: bridge
