@@ -34,6 +34,16 @@ npm i
 
 # Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
+
+# Step 5: Connect Backend - Update the API URL in the following files.
+/nvr-ui/src/lib/api.ts
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+nvr-ui/src/hooks/useNvrHub.ts
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+> The backend URL is taken from the `VITE_API_URL` environment variable.  
+> If not provided, it defaults to `http://localhost:5000`.
 ```
 
 **Edit a file directly in GitHub**
