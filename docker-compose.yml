@@ -1,5 +1,3 @@
-version: '3.9'
-
 # ============================================================
 # onvifNVR – Docker Compose (all data stored in .data/)
 #
@@ -46,7 +44,7 @@ services:
     image: ghcr.io/${GITHUB_REPOSITORY:-masterdeepak15/onvifnvr}/nvr-api:${IMAGE_TAG:-latest}
     container_name: nvr-api
     ports:
-      - "${API_PORT:-5000}:8080"
+      - "${API_PORT:-5050}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
@@ -64,7 +62,7 @@ services:
 
       # CORS
       Cors__AllowedOrigins__0: "${CORS_ORIGIN_0:-http://localhost:3000}"
-      Cors__AllowedOrigins__1: "${CORS_ORIGIN_1:-http://localhost:8080}"
+      Cors__AllowedOrigins__1: "${CORS_ORIGIN_1:-http://localhost:5050}"
       Cors__AllowedOrigins__2: "${CORS_ORIGIN_2:-}"
 
       # Recording / Storage
@@ -80,9 +78,9 @@ services:
       Streaming__DefaultHeight: "${DEFAULT_HEIGHT:-720}"
 
     volumes:
-      - ./.data/db:/var/nvr/data          # SQLite database file
+      - ./.data/db:/var/nvr/data               # SQLite database file
       - ./.data/recordings:/var/nvr/recordings  # Recorded video files
-      - ./.data/temp:/tmp/nvr_chunks       # Temporary FFmpeg chunks
+      - ./.data/temp:/tmp/nvr_chunks            # Temporary FFmpeg chunks
 
     networks:
       - nvr-network
