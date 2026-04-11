@@ -1,10 +1,4 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-WORKDIR /app
-EXPOSE 8080 8081
-
-# Install FFmpeg for RTSP stream processing and recording
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-
+# ─── Stage 1: Build ───────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
@@ -17,17 +11,26 @@ RUN dotnet restore "src/NVR.API/NVR.API.csproj"
 COPY . .
 
 WORKDIR "/src/src/NVR.API"
-RUN dotnet build "NVR.API.csproj" -c Release -o /app/build
-
-FROM build AS publish
 RUN dotnet publish "NVR.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-FROM base AS final
+# ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
-# Create storage directories
-RUN mkdir -p /var/nvr/recordings /tmp/nvr_chunks
+# FFmpeg for RTSP stream processing and recording
+# curl for Docker healthcheck
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg curl \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY --from=publish /app/publish .
+# Storage directories:
+#   /var/nvr/data       – SQLite DB file   (mount nvr-data volume here)
+#   /var/nvr/recordings – Recording files  (mount nvr-recordings volume here)
+#   /tmp/nvr_chunks     – Temp FFmpeg chunks (tmpfs recommended)
+RUN mkdir -p /var/nvr/data /var/nvr/recordings /tmp/nvr_chunks
+
+EXPOSE 8080
+
+COPY --from=build /app/publish .
 
 ENTRYPOINT ["dotnet", "NVR.API.dll"]

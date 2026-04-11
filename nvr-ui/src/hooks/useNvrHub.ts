@@ -2,7 +2,11 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { HubConnectionBuilder, HubConnection, LogLevel } from '@microsoft/signalr';
 import type { StreamControlCommand, PtzCommandDto } from '@/types/nvr';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// In production the UI is served by nginx which proxies /hubs/ → backend.
+// VITE_API_URL is empty string in production (.env.production) so the
+// SignalR URL becomes a relative path, handled transparently by nginx.
+// In development set VITE_API_URL=http://localhost:5000 in .env.local
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 export function useNvrHub(accessToken: string | null) {
   const connRef = useRef<HubConnection | null>(null);
@@ -24,13 +28,15 @@ export function useNvrHub(accessToken: string | null) {
   useEffect(() => {
     if (!accessToken) return;
 
+    const hubUrl = `${API_URL}/hubs/nvr?access_token=${accessToken}`;
+
     const connection = new HubConnectionBuilder()
-      .withUrl(`${API_URL}/hubs/nvr?access_token=${accessToken}`)
+      .withUrl(hubUrl)
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
       .configureLogging(LogLevel.Warning)
       .build();
 
-    // Register existing handlers
+    // Re-register any handlers that were added before connection started
     handlersRef.current.forEach((handlers, event) => {
       handlers.forEach(handler => {
         connection.on(event, handler as any);
@@ -63,10 +69,9 @@ export function useNvrHub(accessToken: string | null) {
   const subscribe = useCallback((cameraId: string) => invoke('SubscribeToCamera', cameraId), [invoke]);
   const unsubscribe = useCallback((cameraId: string) => invoke('UnsubscribeFromCamera', cameraId), [invoke]);
 
-  // ── Stream Control (Play/Pause/Resume/Stop/Seek/Speed/Zoom/GoLive) ──
+  // ── Stream Control ──
   const streamControl = useCallback((cmd: StreamControlCommand) => invoke('StreamControl', cmd), [invoke]);
 
-  // Convenience wrappers
   const play = useCallback((cameraId: string, seekTo?: string, speed?: number) =>
     streamControl({ cameraId, command: 'Play', seekTo, speed }), [streamControl]);
   const pause = useCallback((cameraId: string) =>
@@ -91,7 +96,6 @@ export function useNvrHub(accessToken: string | null) {
   // ── PTZ Control ──
   const ptzCommand = useCallback((cmd: PtzCommandDto) => invoke('PtzCommand', cmd), [invoke]);
 
-  // PTZ convenience: directional move (continuous)
   const ptzMove = useCallback((cameraId: string, action: string, speed = 0.5) =>
     ptzCommand({ cameraId, action, speed, pan: 0, tilt: 0, zoom: 0 }), [ptzCommand]);
   const ptzStop = useCallback((cameraId: string) =>
@@ -102,8 +106,6 @@ export function useNvrHub(accessToken: string | null) {
     ptzCommand({ cameraId, action: 'AbsoluteMove', speed: 0.5, pan, tilt, zoom }), [ptzCommand]);
   const ptzRelativeMove = useCallback((cameraId: string, pan: number, tilt: number, zoom: number) =>
     ptzCommand({ cameraId, action: 'RelativeMove', speed: 0.5, pan, tilt, zoom }), [ptzCommand]);
-
-  // PTZ presets
   const ptzGoToPreset = useCallback((cameraId: string, presetToken: string) =>
     ptzCommand({ cameraId, action: 'GoToPreset', speed: 0.5, pan: 0, tilt: 0, zoom: 0, presetToken }), [ptzCommand]);
   const ptzSavePreset = useCallback((cameraId: string, presetName: string) =>
@@ -111,7 +113,7 @@ export function useNvrHub(accessToken: string | null) {
   const ptzDeletePreset = useCallback((cameraId: string, presetToken: string) =>
     ptzCommand({ cameraId, action: 'DeletePreset', speed: 0, pan: 0, tilt: 0, zoom: 0, presetToken }), [ptzCommand]);
 
-  // Focus
+  // ── Focus ──
   const focusNear = useCallback((cameraId: string, speed = 0.5) =>
     ptzCommand({ cameraId, action: 'FocusNear', speed, pan: 0, tilt: 0, zoom: 0 }), [ptzCommand]);
   const focusFar = useCallback((cameraId: string, speed = 0.5) =>
@@ -125,7 +127,7 @@ export function useNvrHub(accessToken: string | null) {
   const focusAbsolute = useCallback((cameraId: string, position: number, speed = 0.5) =>
     ptzCommand({ cameraId, action: 'FocusAbsolute', speed, pan: 0, tilt: 0, zoom: position }), [ptzCommand]);
 
-  // Iris
+  // ── Iris ──
   const irisOpen = useCallback((cameraId: string) =>
     ptzCommand({ cameraId, action: 'IrisOpen', speed: 0, pan: 0, tilt: 0, zoom: 0 }), [ptzCommand]);
   const irisClose = useCallback((cameraId: string) =>
@@ -151,50 +153,21 @@ export function useNvrHub(accessToken: string | null) {
   const getPtzStatus = useCallback((cameraId: string) => invoke('GetPtzStatus', cameraId), [invoke]);
 
   return {
-    isConnected,
-    on,
-    invoke,
+    isConnected, on, invoke,
     // Live
-    subscribe,
-    unsubscribe,
+    subscribe, unsubscribe,
     // Stream control
-    streamControl,
-    play,
-    pause,
-    resume,
-    stop,
-    seek,
-    setSpeed,
-    digitalZoomIn,
-    digitalZoomOut,
-    digitalZoomReset,
-    goLive,
+    streamControl, play, pause, resume, stop, seek, setSpeed,
+    digitalZoomIn, digitalZoomOut, digitalZoomReset, goLive,
     // PTZ
-    ptzCommand,
-    ptzMove,
-    ptzStop,
-    ptzHome,
-    ptzAbsoluteMove,
-    ptzRelativeMove,
-    ptzGoToPreset,
-    ptzSavePreset,
-    ptzDeletePreset,
+    ptzCommand, ptzMove, ptzStop, ptzHome, ptzAbsoluteMove, ptzRelativeMove,
+    ptzGoToPreset, ptzSavePreset, ptzDeletePreset,
     // Focus
-    focusNear,
-    focusFar,
-    focusStop,
-    focusAuto,
-    focusManual,
-    focusAbsolute,
+    focusNear, focusFar, focusStop, focusAuto, focusManual, focusAbsolute,
     // Iris
-    irisOpen,
-    irisClose,
-    irisSet,
-    irisAuto,
-    irisManual,
+    irisOpen, irisClose, irisSet, irisAuto, irisManual,
     // Recording
-    startRecording,
-    stopRecording,
+    startRecording, stopRecording,
     // Snapshot
     requestSnapshot,
     // Alerts

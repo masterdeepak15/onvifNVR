@@ -1,4 +1,8 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// In production the UI is served by nginx which proxies /api/ → backend.
+// VITE_API_URL is empty string in production (.env.production) so all API
+// calls use relative paths — no CORS needed, nginx handles the routing.
+// In development set VITE_API_URL=http://localhost:5000 in .env.local
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 class ApiClient {
   private baseUrl: string;
