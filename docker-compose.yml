@@ -6,6 +6,11 @@
 #
 # With SQL Server:
 #   docker compose --profile sqlserver up -d
+#
+# Test streams (no real camera needed):
+#   cam1 → rtsp://rtsp-test:8554/cam1   (colour bars + timestamp)
+#   cam2 → rtsp://rtsp-test:8554/cam2   (moving test pattern)
+#   cam3 → rtsp://rtsp-test:8554/cam3   (solid colour cycle)
 # ============================================================
 
 services:
@@ -36,6 +41,82 @@ services:
       retries: 12
       start_period: 30s
     restart: unless-stopped
+
+  # ============================================================
+  # RTSP Test Server (mediamtx)
+  # Accepts streams published by the ffmpeg-* containers below
+  # ============================================================
+  rtsp-test:
+    image: bluenviron/mediamtx:latest
+    container_name: rtsp-test
+    ports:
+      - "8554:8554"    # RTSP
+      - "8888:8888"    # HLS (optional browser preview)
+    networks:
+      - nvr-network
+    restart: unless-stopped
+
+  # ============================================================
+  # FFmpeg test stream – cam1: SMPTE colour bars + live timestamp
+  # ============================================================
+  ffmpeg-cam1:
+    image: linuxserver/ffmpeg:latest
+    container_name: ffmpeg-cam1
+    depends_on:
+      - rtsp-test
+    networks:
+      - nvr-network
+    restart: unless-stopped
+    entrypoint: >
+      /bin/sh -c "sleep 3 &&
+      ffmpeg -re
+      -f lavfi -i testsrc2=size=1280x720:rate=15
+      -f lavfi -i sine=frequency=440:sample_rate=44100
+      -vf \"drawtext=text='CAM1 %{localtime}':fontsize=36:fontcolor=white:x=10:y=10:box=1:boxcolor=black@0.5\"
+      -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 30 -b:v 1500k
+      -c:a aac -b:a 64k
+      -f rtsp rtsp://rtsp-test:8554/cam1"
+
+  # ============================================================
+  # FFmpeg test stream – cam2: moving SMPTE pattern (different look)
+  # ============================================================
+  ffmpeg-cam2:
+    image: linuxserver/ffmpeg:latest
+    container_name: ffmpeg-cam2
+    depends_on:
+      - rtsp-test
+    networks:
+      - nvr-network
+    restart: unless-stopped
+    entrypoint: >
+      /bin/sh -c "sleep 3 &&
+      ffmpeg -re
+      -f lavfi -i smptehdbars=size=1280x720:rate=15
+      -f lavfi -i sine=frequency=880:sample_rate=44100
+      -vf \"drawtext=text='CAM2 %{localtime}':fontsize=36:fontcolor=black:x=10:y=10:box=1:boxcolor=white@0.6\"
+      -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 30 -b:v 1500k
+      -c:a aac -b:a 64k
+      -f rtsp rtsp://rtsp-test:8554/cam2"
+
+  # ============================================================
+  # FFmpeg test stream – cam3: solid colour cycle (simple/lightweight)
+  # ============================================================
+  ffmpeg-cam3:
+    image: linuxserver/ffmpeg:latest
+    container_name: ffmpeg-cam3
+    depends_on:
+      - rtsp-test
+    networks:
+      - nvr-network
+    restart: unless-stopped
+    entrypoint: >
+      /bin/sh -c "sleep 3 &&
+      ffmpeg -re
+      -f lavfi -i \"color=c=blue:size=1280x720:rate=15\"
+      -vf \"drawtext=text='CAM3 %{localtime}':fontsize=48:fontcolor=white:x=10:y=10\"
+      -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 30 -b:v 800k
+      -an
+      -f rtsp rtsp://rtsp-test:8554/cam3"
 
   # ============================================================
   # NVR API Backend
@@ -84,6 +165,8 @@ services:
 
     networks:
       - nvr-network
+    depends_on:
+      - rtsp-test
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
