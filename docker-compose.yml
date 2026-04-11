@@ -1,16 +1,14 @@
 version: '3.9'
 
-# ──────────────────────────────────────────────────────────────────────────────
-# onvifNVR – Production Docker Compose
+# ============================================================
+# onvifNVR – Docker Compose (all data stored in .data/)
 #
-# Copy .env.example → .env and fill in values before running.
-#
-# Quick start (SQLite, no external DB needed):
+# Quick start:
 #   docker compose up -d
 #
-# Production (SQL Server):
-#   DATABASE_PROVIDER=SqlServer docker compose --profile sqlserver up -d
-# ──────────────────────────────────────────────────────────────────────────────
+# With SQL Server:
+#   docker compose --profile sqlserver up -d
+# ============================================================
 
 services:
 
@@ -28,7 +26,7 @@ services:
     ports:
       - "1433:1433"
     volumes:
-      - sqlserver-data:/var/opt/mssql
+      - ./.data/sqlserver:/var/opt/mssql
     networks:
       - nvr-network
     healthcheck:
@@ -46,9 +44,6 @@ services:
   # ============================================================
   nvr-api:
     image: ghcr.io/${GITHUB_REPOSITORY:-masterdeepak15/onvifnvr}/nvr-api:${IMAGE_TAG:-latest}
-    build:
-      context: ./nvr-v2
-      dockerfile: Dockerfile
     container_name: nvr-api
     ports:
       - "${API_PORT:-5000}:8080"
@@ -56,47 +51,39 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
 
-      # ── Database ──────────────────────────────────────────
-      # SQLite (default) = no extra service needed.
-      # Set DATABASE_PROVIDER=SqlServer and start --profile sqlserver for SQL Server.
+      # Database
       Database__Provider: "${DATABASE_PROVIDER:-SQLite}"
-
-      # SQLite: DB file inside the nvr-data volume
       ConnectionStrings__DefaultConnection: "${SQLITE_CONNECTION:-Data Source=/var/nvr/data/nvr.db}"
-
-      # SQL Server connection string (used when DATABASE_PROVIDER=SqlServer)
       ConnectionStrings__SqlServer: "Server=${DB_HOST:-sqlserver};Database=${DB_NAME:-NvrDb};User Id=${DB_USER:-sa};Password=${DB_PASSWORD:-NvrP@ss2024!};TrustServerCertificate=True;"
 
-      # ── JWT ───────────────────────────────────────────────
+      # JWT – change secret before going to production!
       Jwt__Secret: "${JWT_SECRET:-NVR-SuperSecretKey-ChangeInProduction-AtLeast32Characters!}"
       Jwt__Issuer: "${JWT_ISSUER:-NVR.API}"
       Jwt__Audience: "${JWT_AUDIENCE:-NVR.Client}"
       Jwt__ExpiryHours: "${JWT_EXPIRY_HOURS:-1}"
 
-      # ── CORS ──────────────────────────────────────────────
+      # CORS
       Cors__AllowedOrigins__0: "${CORS_ORIGIN_0:-http://localhost:3000}"
       Cors__AllowedOrigins__1: "${CORS_ORIGIN_1:-http://localhost:8080}"
       Cors__AllowedOrigins__2: "${CORS_ORIGIN_2:-}"
 
-      # ── Recording / Storage ───────────────────────────────
-      Recording__TempDirectory: "${TEMP_CHUNKS_DIR:-/tmp/nvr_chunks}"
+      # Recording / Storage
+      Recording__TempDirectory: /tmp/nvr_chunks
       Recording__DefaultChunkDurationSeconds: "${CHUNK_DURATION_SECONDS:-60}"
       Recording__DefaultBitrateKbps: "${DEFAULT_BITRATE_KBPS:-2000}"
       Recording__HardwareAcceleration: "${HW_ACCEL:-none}"
 
-      # ── Streaming ─────────────────────────────────────────
+      # Streaming
       Streaming__MaxConcurrentCameras: "${MAX_CAMERAS:-64}"
       Streaming__DefaultFps: "${DEFAULT_FPS:-15}"
       Streaming__DefaultWidth: "${DEFAULT_WIDTH:-1280}"
       Streaming__DefaultHeight: "${DEFAULT_HEIGHT:-720}"
 
     volumes:
-      # SQLite DB volume (or host path via NVR_DATA_PATH)
-      - "${NVR_DATA_PATH:-nvr-data}:/var/nvr/data"
-      # Recordings volume (override with host path for large NAS storage)
-      - "${RECORDINGS_PATH:-nvr-recordings}:/var/nvr/recordings"
-      # Temp FFmpeg chunks (tmpfs recommended for performance)
-      - "${TEMP_CHUNKS_PATH:-nvr-temp}:/tmp/nvr_chunks"
+      - ./.data/db:/var/nvr/data          # SQLite database file
+      - ./.data/recordings:/var/nvr/recordings  # Recorded video files
+      - ./.data/temp:/tmp/nvr_chunks       # Temporary FFmpeg chunks
+
     networks:
       - nvr-network
     restart: unless-stopped
@@ -112,13 +99,6 @@ services:
   # ============================================================
   nvr-ui:
     image: ghcr.io/${GITHUB_REPOSITORY:-masterdeepak15/onvifnvr}/nvr-ui:${IMAGE_TAG:-latest}
-    build:
-      context: ./nvr-ui
-      dockerfile: Dockerfile
-      args:
-        # Empty = relative URLs, nginx proxies to nvr-api (recommended)
-        # Set to http://your-api-host:5000 only when UI is on a different server
-        VITE_API_URL: "${VITE_API_URL:-}"
     container_name: nvr-ui
     ports:
       - "${UI_PORT:-3000}:80"
@@ -128,16 +108,6 @@ services:
     networks:
       - nvr-network
     restart: unless-stopped
-
-volumes:
-  sqlserver-data:
-    driver: local
-  nvr-data:
-    driver: local
-  nvr-recordings:
-    driver: local
-  nvr-temp:
-    driver: local
 
 networks:
   nvr-network:
